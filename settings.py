@@ -50,3 +50,8 @@ SHAKE_DECAY = 9.0       # how fast screen shake dies out
 
 # ---- Artwork loading ----
 ASSET_DEBUG = True      # print a line for every PNG that loads or is missing (set False when art is final)
+
+# ---- Sound ----
+SOUND_ON = True        # master switch for effects and music
+SFX_VOLUME = 0.7       # 0..1
+MUSIC_VOLUME = 0.4     # 0..1 (quieter than effects so they stay clear)

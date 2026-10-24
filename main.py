@@ -12,6 +12,7 @@ import vehicles
 from vehicle import Rickshaw
 from obstacles import Hazards
 import assets
+import sound
 
 PLAY_STATES = ("playing", "paused", "gameover")
 DIM_STATES = ("paused", "gameover", "garage", "maps")
@@ -41,6 +42,7 @@ class Game:
     def __init__(self):
         """Create the window, load art and the save file, build menus and set every counter to its start value."""
         pygame.init()
+        sound.init()
         self.screen = pygame.display.set_mode((S.WIDTH, S.HEIGHT))
         pygame.display.set_caption(S.TITLE)
         self.clock = pygame.time.Clock()
@@ -83,6 +85,7 @@ class Game:
         self.shake = 0.0
         self.time = 0.0
         self.dry_time = 0.0
+        self.low_fuel_timer = 0.0
         self.g_idx = 0                    # vehicle being browsed in the garage
         self.m_idx = 0                    # map being browsed
         self.message = ("", 0.0)          # (text, seconds left) shown in the garage
@@ -144,6 +147,7 @@ class Game:
         self.shake = 0.0
         self.camera_x = self.rickshaw.x - S.WIDTH * 0.35
         self.dry_time = 0.0
+        self.low_fuel_timer = 0.0
         self.state = "playing"
 
     def end_run(self, reason):
@@ -156,6 +160,7 @@ class Game:
         self.save["best"][mid] = max(best, d)
         self.save["wallet"] += earned
         self.persist()
+        sound.play("record" if self.result["record"] else "gameover")
         self.set_state("gameover")
 
     # ---- events ----
@@ -175,10 +180,13 @@ class Game:
         """One-shot keys during play: pause, restart and jump."""
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                sound.play("click")
                 self.set_state("paused")
             elif event.key == pygame.K_r:
                 self.start_run()
             elif event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_w):
+                if self.rickshaw.on_ground:                 # the jump only works on the ground
+                    sound.play("jump")
                 self.rickshaw.jump()
 
     def handle_menu_event(self, event):
@@ -211,6 +219,7 @@ class Game:
 
     def do_action(self, action):
         """Carry out a menu action string such as 'start', 'resume' or 'exit'."""
+        sound.play("click")
         if action == "restart":
             self.start_run()
         elif action == "resume":
@@ -248,9 +257,11 @@ class Game:
         if spec["id"] not in self.save["owned"]:
             if self.save["wallet"] < spec["price"]:
                 self.message = (f"Not enough rupees! You need {money(spec['price'] - self.save['wallet'])} more.", 2.5)
+                sound.play("error")
                 return
             self.save["wallet"] -= spec["price"]
             self.save["owned"].append(spec["id"])
+            sound.play("buy")
         self.save["vehicle"] = spec["id"]
         self.persist()
 
@@ -273,6 +284,12 @@ class Game:
             self.shake = max(self.shake, r.impact)
             r.impact = 0.0
         self.shake *= math.exp(-S.SHAKE_DECAY * dt)
+
+        if 0 < r.fuel <= r.fuel_max * 0.25:                 # beep once a second while the tank is low
+            self.low_fuel_timer -= dt
+            if self.low_fuel_timer <= 0:
+                sound.play("low_fuel")
+                self.low_fuel_timer = 1.0
 
         if r.health <= 0:
             self.end_run("WRECKED!")
@@ -491,6 +508,14 @@ class Game:
         self.menus["maps"].set_labels(["<", "DRIVE!", ">", "BACK"])
         self.menus["maps"].draw(self.screen, self.fonts)
 
+    # ---- sound ----
+    def engine_volume(self):
+        """How loud the engine loop should be (0 = silent). Only sounds while actually driving with fuel."""
+        r = self.rickshaw
+        if self.state != "playing" or r is None or r.fuel <= 0:
+            return 0.0
+        return 0.3 + 0.5 * min(1.0, abs(r.speed) / r.spec["max_speed"]) + (0.2 if r.throttle else 0.0)
+
     # ---- main loop ----
     def run(self):
         """Main loop: events -> fixed-step physics (120 Hz) -> draw, until the player quits."""
@@ -500,6 +525,7 @@ class Game:
             self.time += frame_time
             self.message = (self.message[0], max(0.0, self.message[1] - frame_time))
             self.handle_events()
+            sound.engine(self.engine_volume())
             if self.state == "playing":
                 accumulator += frame_time
                 while accumulator >= S.PHYSICS_DT and self.state == "playing":

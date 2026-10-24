@@ -4,6 +4,7 @@ import random
 import pygame
 import settings as S
 import terrain
+import sound
 
 DUST = (175, 150, 115)
 
@@ -144,7 +145,8 @@ class Rickshaw:
         self.animate(dt, fx)
 
     def on_land(self, vy, fx):
-        """Landing reaction: suspension kick, shake strength, wheel smoothing and a dust burst."""
+        """Landing reaction: sound, suspension kick, shake strength, wheel smoothing and a dust burst."""
+        sound.play("land", max(0.3, min(1.0, vy / S.JUMP_SPEED)))
         self.susp_vel += vy * 0.25
         self.impact = max(self.impact, min(vy / S.JUMP_SPEED, 1.2) * 7)
         for i, (wx, hub, r) in enumerate(((self.x + self.dxr, self.rear_hub, self.r_rear),

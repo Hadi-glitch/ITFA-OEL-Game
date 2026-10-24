@@ -3,6 +3,7 @@ import math
 import os
 import pygame
 import settings as S
+import sound
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

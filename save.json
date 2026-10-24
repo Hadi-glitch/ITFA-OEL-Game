@@ -1,12 +1,12 @@
 {
-  "wallet": 1800,
+  "wallet": 4665,
   "owned": [
     "classic",
     "deluxe",
     "chingchi"
   ],
   "vehicle": "chingchi",
-  "map": "faisal",
+  "map": "university",
   "best": {
     "lyari": 602.5063465619203,
     "university": 941.8255434236208,

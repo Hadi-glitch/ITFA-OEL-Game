@@ -4,6 +4,7 @@ import random
 import pygame
 import settings as S
 import terrain
+import sound
 
 # Damage dealt by each obstacle (absolute health points; vehicles have 80-230 health).
 DAMAGE = {"rock": 28, "cart": 22, "car": 35, "barricade": 16, "barrel": 9, "cone": 3, "garbage": 6}
@@ -139,9 +140,11 @@ class Hazards:
                     if p["kind"] == "coin":
                         r.coins += 1
                         colour = S.MARIGOLD
+                        sound.play("coin")
                     else:
                         r.fuel = min(r.fuel_max, r.fuel + 35)
                         colour = S.LIME
+                        sound.play("cng")
                     for _ in range(6):
                         fx.emit(p["x"], py, random.uniform(-70, 70), random.uniform(-120, -20), 0.45, 3, 1, colour, 220, 300)
         self.update_debris(dt)
@@ -152,6 +155,7 @@ class Hazards:
         speed_in = abs(r.speed)
         if kind in SOLID:
             if r.hit_cooldown <= 0 and speed_in > 40:                # gentle nudges do no damage
+                sound.play("hit_solid", min(1.0, 0.4 + speed_in / 300))
                 r.health -= max(3.0, DAMAGE[kind] * min(1.0, speed_in / 250))
                 r.hit_cooldown = 0.4
                 r.impact = max(r.impact, min(speed_in / 50, 8.0))
@@ -165,6 +169,7 @@ class Hazards:
         r.speed *= SPEED_KEEP[kind]
         r.impact = max(r.impact, min(speed_in / 60, 6.0))
         r.hit_cooldown = 0.2
+        sound.play("smash" if kind in KNOCK else "garbage")
         if kind in KNOCK:
             self.debris.append(dict(sprite=self.sprite(o), x=o["x0"] + o["w"] / 2, y=ground - o["h"] / 2,
                                     vx=max(r.speed, 60) * 1.1 + random.uniform(20, 120), vy=-random.uniform(220, 420),
