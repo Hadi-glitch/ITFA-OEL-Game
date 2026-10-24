@@ -111,11 +111,16 @@ class Menu:
     """A vertical list of buttons usable with keyboard (Up/Down/Enter) and mouse.
     handle_event() returns the chosen button's action string, or None."""
 
-    def __init__(self, items, center_x, top, width=300, height=54, gap=14):
+    def __init__(self, items, center_x, top, width=300, height=54, gap=14, horizontal=False):
         self.buttons = []
+        self.horizontal = horizontal
+        total = len(items) * width + (len(items) - 1) * gap
         for i, (label, action) in enumerate(items):
             rect = pygame.Rect(0, 0, width, height)
-            rect.midtop = (center_x, top + i * (height + gap))
+            if horizontal:                      # buttons side by side, centred on center_x
+                rect.topleft = (center_x - total // 2 + i * (width + gap), top)
+            else:
+                rect.midtop = (center_x, top + i * (height + gap))
             self.buttons.append(Button(rect, label, action))
         self.selected = 0
 
@@ -135,9 +140,11 @@ class Menu:
                     self.selected = i
                     return b.action
         elif event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_UP, pygame.K_w):
+            prev_keys = (pygame.K_LEFT, pygame.K_a) if self.horizontal else (pygame.K_UP, pygame.K_w)
+            next_keys = (pygame.K_RIGHT, pygame.K_d) if self.horizontal else (pygame.K_DOWN, pygame.K_s)
+            if event.key in prev_keys:
                 self.selected = (self.selected - 1) % n
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
+            elif event.key in next_keys:
                 self.selected = (self.selected + 1) % n
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 return self.buttons[self.selected].action
@@ -160,7 +167,7 @@ class Menu:
 # --------------------------------------------------------------------------
 # In-game HUD
 # --------------------------------------------------------------------------
-def draw_speedometer(surf, fonts, kmh, max_kmh=60, r=100):
+def draw_speedometer(surf, fonts, kmh, max_kmh=70, r=100):
     """Half-dial rising from the bottom edge of the screen."""
     cx, cy = S.WIDTH // 2, S.HEIGHT - 10
     pygame.draw.circle(surf, S.SHADOW, (cx + 3, cy + 4), r)
@@ -221,11 +228,11 @@ class HUD:
         self.f = fonts
         self.icon = make_crescent_star(30)
 
-    def draw(self, surf, r, distance_m, show_physics, t):
+    def draw(self, surf, r, distance_m, t):
+        """Draw the whole in-game HUD: distance, coins/health, fuel, speedometer and pedals."""
         self.draw_distance(surf, distance_m)
-        if show_physics:
-            self.draw_physics(surf, r)
-        self.draw_fuel(surf, r.fuel / S.FUEL_MAX, t)
+        self.draw_status(surf, r)
+        self.draw_fuel(surf, r.fuel / r.fuel_max, t)
         kmh = abs(r.speed) / S.PIXELS_PER_METER * 3.6
         draw_speedometer(surf, self.f, kmh)
         draw_pedal(surf, self.f, (20, S.HEIGHT - 112, 84, 92), "BRAKE", "A / Left", r.braking)
@@ -240,15 +247,21 @@ class HUD:
                   "midleft", max_width=130)
         surf.blit(self.icon, self.icon.get_rect(midright=(rect.right - 20, rect.centery)))
 
-    def draw_physics(self, surf, r):
-        rect = pygame.Rect(14, 102, 230, 112)
+    def draw_status(self, surf, r):
+        """Coins collected this run and the vehicle's health bar."""
+        rect = pygame.Rect(14, 102, 230, 84)
         draw_plaque(surf, rect)
-        rows = [("ACCEL", f"{r.accel:+.1f} m/s\u00b2"), ("SLOPE", f"{r.slope_deg:+.0f}\u00b0"),
-                ("HEIGHT", f"{r.air_height:.1f} m"), ("MASS", f"{S.MASS:.0f} kg")]
-        for i, (label, value) in enumerate(rows):
-            y = rect.top + 26 + i * 21
-            draw_text(surf, label, self.f.tiny, S.MARIGOLD, (rect.left + 22, y), "midleft", shadow=False)
-            draw_text(surf, value, self.f.small, S.WHITE, (rect.right - 22, y), "midright")
+        pygame.draw.circle(surf, S.MARIGOLD, (rect.left + 32, rect.top + 28), 11)
+        pygame.draw.circle(surf, (150, 95, 0), (rect.left + 32, rect.top + 28), 11, 2)
+        draw_text(surf, f"x {r.coins}", self.f.mid, S.WHITE, (rect.left + 54, rect.top + 28), "midleft")
+        draw_text(surf, f"Rs {r.coins * S.COIN_VALUE}", self.f.tiny, S.MARIGOLD, (rect.right - 22, rect.top + 28), "midright", shadow=False)
+        bar = pygame.Rect(rect.left + 22, rect.top + 52, rect.width - 44, 16)
+        frac = max(0.0, min(1.0, r.health / r.spec["armor"]))
+        pygame.draw.rect(surf, S.PK_GREEN_DARK, bar, border_radius=4)
+        colour = S.LIME if frac > 0.5 else (S.MARIGOLD if frac > 0.25 else S.RED)
+        pygame.draw.rect(surf, colour, (bar.left, bar.top, int(bar.width * frac), bar.height), border_radius=4)
+        pygame.draw.rect(surf, S.WHITE, bar, 1, border_radius=4)
+        draw_text(surf, "HEALTH", self.f.tiny, S.WHITE, bar.center, shadow=True)
 
     def draw_fuel(self, surf, frac, t):
         rect = pygame.Rect(S.WIDTH - 14 - 250, 12, 250, 62)
@@ -269,3 +282,17 @@ class HUD:
                   "midright")
         if low and int(t * 2) % 2 == 0:
             draw_text(surf, "LOW CNG!", self.f.mid, S.RED, (S.WIDTH // 2, 50))
+
+def wrap_text(font, text, width):
+    """Split `text` into lines that each fit inside `width` pixels."""
+    lines, line = [], ""
+    for word in text.split():
+        trial = (line + " " + word).strip()
+        if font.size(trial)[0] <= width or not line:
+            line = trial
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines

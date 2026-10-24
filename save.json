@@ -1,0 +1,12 @@
+{
+  "wallet": 1995,
+  "owned": [
+    "classic"
+  ],
+  "vehicle": "classic",
+  "map": "university",
+  "best": {
+    "lyari": 602.5063465619203,
+    "university": 604.904849532731
+  }
+}
