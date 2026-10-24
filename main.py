@@ -11,11 +11,13 @@ import save
 import vehicles
 from vehicle import Rickshaw
 from obstacles import Hazards
-import assets; assets.load_image("backgrounds", "university.png")
+import assets
 
 PLAY_STATES = ("playing", "paused", "gameover")
 DIM_STATES = ("paused", "gameover", "garage", "maps")
 SKY = (255, 205, 140)          # fills the screen edges while the screen shakes
+ROAD_STEP = 3     # width of one painted road column in px (the road PNG's width must be a multiple of this)
+ROAD_LIFT = 1     # px the painted asphalt edge sits above terrain height
 
 HELP_LINES = [
     ("D / Right", "Accelerate"),
@@ -51,6 +53,7 @@ class Game:
         self.preview_arts = {v["id"]: vehicles.VehicleArt(v, 1.35) for v in vehicles.VEHICLES}   # bigger, for the garage
         self.map_bg = {m["id"]: maps.build_background(m) for m in maps.MAPS}
         self.map_thumb = {m["id"]: self.make_thumb(m) for m in maps.MAPS}
+        self.road_tex = {m["id"]: assets.load_image("roads", f"{m['id']}.png") for m in maps.MAPS}
         self.rickshaw = None                                # created when a run starts
         self.fx = effects.ParticleSystem()
         self.clouds = effects.Clouds()
@@ -288,22 +291,36 @@ class Game:
             x += w
 
     def draw_road(self, surf, cam):
-        """Draw the road in the map's colours: body, darker lane, dashed centre line, pebbles and a bright edge."""
+        """Road: painted strip if assets/roads/<map id>.png exists, otherwise the shape-drawn road."""
         m = terrain.current()
+        tex = self.road_tex.get(m["id"])
         top = [(sx, terrain.get_height(sx + cam)) for sx in range(0, S.WIDTH + 12, 10)]
-        pygame.draw.polygon(surf, m["road"], [(0, S.HEIGHT)] + top + [(S.WIDTH, S.HEIGHT)])
-        band = [(x, y + 8) for x, y in top] + [(x, y + 30) for x, y in reversed(top)]
-        pygame.draw.polygon(surf, m["asphalt"], band)
+        pygame.draw.polygon(surf, m["road"], [(0, S.HEIGHT)] + top + [(S.WIDTH, S.HEIGHT)])   # also backs the texture
+        if tex:
+            self.draw_road_texture(surf, cam, tex)
+        else:
+            band = [(x, y + 8) for x, y in top] + [(x, y + 30) for x, y in reversed(top)]
+            pygame.draw.polygon(surf, m["asphalt"], band)
         first = int(cam // 90) * 90
         for wx in range(first, int(cam) + S.WIDTH + 90, 90):             # dashes scroll with the world
             a = (wx - cam, terrain.get_height(wx) + 19)
             b = (wx + 40 - cam, terrain.get_height(wx + 40) + 19)
             pygame.draw.line(surf, (235, 225, 190), a, b, 3)
-        first = int(cam // 37) * 37
-        for wx in range(first, int(cam) + S.WIDTH + 37, 37):             # pebbles in the dirt below
-            py = terrain.get_height(wx) + 40 + (wx * 31) % 60
-            pygame.draw.circle(surf, tuple(max(0, c - 25) for c in m["road"]), (int(wx - cam), int(py)), 2 + (wx % 3))
-        pygame.draw.lines(surf, m["road_top"], False, top, 4)
+        if not tex:
+            first = int(cam // 37) * 37
+            for wx in range(first, int(cam) + S.WIDTH + 37, 37):         # pebbles in the dirt below
+                py = terrain.get_height(wx) + 40 + (wx * 31) % 60
+                pygame.draw.circle(surf, tuple(max(0, c - 25) for c in m["road"]), (int(wx - cam), int(py)), 2 + (wx % 3))
+            pygame.draw.lines(surf, m["road_top"], False, top, 4)
+
+    def draw_road_texture(self, surf, cam, tex):
+        """Paint the road PNG as thin vertical strips, each moved up/down to follow terrain.get_height."""
+        tw, th = tex.get_size()
+        icam = int(cam)
+        first = int(cam // ROAD_STEP) * ROAD_STEP
+        for wx in range(first, icam + S.WIDTH + ROAD_STEP, ROAD_STEP):
+            y = terrain.get_height(wx + ROAD_STEP / 2) - ROAD_LIFT
+            surf.blit(tex, (wx - icam, y), (wx % tw, 0, ROAD_STEP, th))
 
     def draw(self):
         """Draw world layers back-to-front, apply shake, then HUD, menus and overlays."""

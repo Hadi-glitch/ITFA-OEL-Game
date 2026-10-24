@@ -3,6 +3,7 @@ import math
 import random
 import pygame
 import settings as S
+import assets
 
 # terrain = list of (amplitude px, period px) sine waves added together; rough = tiny fast bumps (px).
 # hazards = weights for what appears in a 320 px cell of road; density = chance a cell holds something.
@@ -42,6 +43,10 @@ BY_ID = {m["id"]: m for m in MAPS}
 
 
 def build_background(m):
+    art = assets.load_image("backgrounds", f"{m['id']}.png", alpha=False, height=S.HEIGHT)
+    if art is not None and art.get_width() >= S.WIDTH:
+        return art                      # painted skyline: already loops, no mirroring needed
+    w = S.WIDTH * 2                     # ...existing procedural code continues unchanged
     """Draw a seamless-looking skyline picture (2 screens wide) for a map; it is tiled with parallax."""
     w = S.WIDTH * 2
     surf = pygame.Surface((w, S.HEIGHT))

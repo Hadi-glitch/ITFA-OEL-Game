@@ -8,9 +8,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Geometry numbers (rear/front = hub x, hub y, tyre radius) are measured in the saved PNG, see assets/vehicles.
 VEHICLES = [
-    dict(id="classic", name="CLASSIC RICKSHAW", price=0, display_w=140,
+    dict(id="classic", name="CLASSIC RICKSHAW", price=0, display_w=150,
          blurb="Light, cheap and cheerful. Great for learning the roads.",
-         size=(280, 171), rear=(70.8, 147.6, 24.0), front=(259.8, 148.2, 20.7), exhaust=(52, 136), head=None,
+         size=(740, 444), rear=(119.6, 420.4, 45.0), front=(677.6, 420.4, 45.0), exhaust=(13, 406), head=None,
          mass=300.0, drive=1800.0, brake=2500.0, max_speed=400.0, fuel=100.0, armor=100.0, susp_k=300.0, susp_c=14.0),
     dict(id="deluxe", name="TRUCK-ART DELUXE", price=1500, display_w=175,
          blurb="Hand-painted beauty with a stronger engine and tank.",
