@@ -13,9 +13,10 @@ from vehicle import Rickshaw
 from obstacles import Hazards
 import assets
 import sound
+import powerups
 
 PLAY_STATES = ("playing", "paused", "gameover")
-DIM_STATES = ("paused", "gameover", "garage", "maps")
+DIM_STATES = ("paused", "gameover", "garage", "maps", "shop")
 SKY = (255, 205, 140)          # fills the screen edges while the screen shakes
 ROAD_STEP = 3     # width of one painted road column in px (the road PNG's width must be a multiple of this)
 ROAD_LIFT = 1     # px the painted asphalt edge sits above terrain height
@@ -27,6 +28,10 @@ HELP_LINES = [
     ("R", "Restart the run"),
     ("Esc", "Pause"),
 ]
+
+VOLUME_STEPS = [0.0, 0.3, 0.6, 1.0]
+VOLUME_NAMES = ["OFF", "LOW", "MED", "HIGH"]
+MILESTONES = [100, 250, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000]
 
 
 def money(n):
@@ -61,21 +66,27 @@ class Game:
         self.clouds = effects.Clouds()
         self.scenery = effects.Scenery()
         self.hazards = Hazards()
+        self.flash = effects.ScreenFlash()
+        self.milestones_shown = set()
+        self.milestone_display = None
         self.dim = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
         self.dim.fill((0, 0, 0, 150))
 
         cx = S.WIDTH // 2
         browse = [("<", "prev"), ("", "act"), (">", "next"), ("BACK", "menu")]
         self.menus = {
-            "menu": ui.Menu([("START", "start"), ("GARAGE", "garage"), ("HOW TO PLAY", "help"),
-                             ("OPTIONS", "options"), ("EXIT", "exit")], cx, 226, height=48, gap=10),
+            "menu": ui.Menu([("START", "start"), ("GARAGE", "garage"), ("SHOP", "shop"),
+                             ("HOW TO PLAY", "help"), ("OPTIONS", "options"),
+                             ("EXIT", "exit")], cx, 210, height=44, gap=7),
             "help": ui.Menu([("BACK", "menu")], cx, 490),
-            "options": ui.Menu([("", "toggle_fps"), ("BACK", "menu")], cx, 220, width=380),
+            "options": ui.Menu([("", "toggle_sfx"), ("", "toggle_music"), ("", "toggle_fps"),
+                                ("BACK", "menu")], cx, 180, width=380, gap=10),
             "paused": ui.Menu([("RESUME", "resume"), ("RESTART", "restart"),
                                ("MAIN MENU", "menu")], cx, 210),
             "gameover": ui.Menu([("RETRY", "restart"), ("MAIN MENU", "menu")], cx, 350),
             "garage": ui.Menu(browse, cx, 487, width=150, height=48, gap=12, horizontal=True),
             "maps": ui.Menu(list(browse), cx, 487, width=150, height=48, gap=12, horizontal=True),
+            "shop": ui.Menu(list(browse), cx, 487, width=150, height=48, gap=12, horizontal=True),
         }
         self.state = "menu"
         self.running = True
@@ -88,10 +99,13 @@ class Game:
         self.low_fuel_timer = 0.0
         self.g_idx = 0                    # vehicle being browsed in the garage
         self.m_idx = 0                    # map being browsed
+        self.s_idx = 0                    # powerup being browsed in the shop
         self.message = ("", 0.0)          # (text, seconds left) shown in the garage
         self.result = {}
         self.background = None
         self.apply_map(maps.BY_ID.get(self.save["map"], maps.MAPS[0]))
+        sound.discover_music()
+        sound.play_music()
 
     # ---- helpers ----
     def make_thumb(self, m):
@@ -131,7 +145,11 @@ class Game:
         elif state == "maps":
             self.m_idx = [m["id"] for m in maps.MAPS].index(self.save["map"])
             self.menus[state].selected = 1
-        if state in ("menu", "help", "options", "garage"):
+        elif state == "shop":
+            self.s_idx = 0
+            self.menus[state].selected = 1
+            self.message = ("", 0.0)
+        if state in ("menu", "help", "options", "garage", "shop"):
             self.apply_map(self.selected_map())
 
     def start_run(self):
@@ -148,6 +166,9 @@ class Game:
         self.camera_x = self.rickshaw.x - S.WIDTH * 0.35
         self.dry_time = 0.0
         self.low_fuel_timer = 0.0
+        self.milestones_shown = set()
+        self.milestone_display = None
+        self.rickshaw.powerups.set_levels(self.save.get("powerup_levels", {}))
         self.state = "playing"
 
     def end_run(self, reason):
@@ -171,7 +192,7 @@ class Game:
                 self.running = False
             elif self.state == "playing":
                 self.handle_play_event(event)
-            elif self.state in ("garage", "maps"):
+            elif self.state in ("garage", "maps", "shop"):
                 self.handle_browse_event(event)
             else:
                 self.handle_menu_event(event)
@@ -226,7 +247,7 @@ class Game:
             self.state = "playing"
         elif action == "start":
             self.set_state("maps")
-        elif action in ("menu", "help", "options", "garage"):
+        elif action in ("menu", "help", "options", "garage", "shop"):
             self.set_state(action)
         elif action in ("prev", "next"):
             self.browse(-1 if action == "prev" else 1)
@@ -234,6 +255,13 @@ class Game:
             self.browse_confirm()
         elif action == "toggle_fps":
             self.show_fps = not self.show_fps
+        elif action == "toggle_sfx":
+            idx = min(range(len(VOLUME_STEPS)), key=lambda i: abs(VOLUME_STEPS[i] - S.SFX_VOLUME))
+            S.SFX_VOLUME = VOLUME_STEPS[(idx + 1) % len(VOLUME_STEPS)]
+        elif action == "toggle_music":
+            idx = min(range(len(VOLUME_STEPS)), key=lambda i: abs(VOLUME_STEPS[i] - S.MUSIC_VOLUME))
+            S.MUSIC_VOLUME = VOLUME_STEPS[(idx + 1) % len(VOLUME_STEPS)]
+            sound.set_music_volume(S.MUSIC_VOLUME)
         elif action == "exit":
             self.running = False
 
@@ -242,6 +270,9 @@ class Game:
         if self.state == "garage":
             self.g_idx = (self.g_idx + step) % len(vehicles.VEHICLES)
             self.message = ("", 0.0)
+        elif self.state == "shop":
+            self.s_idx = (self.s_idx + step) % len(powerups.POWERUPS)
+            self.message = ("", 0.0)
         else:
             self.m_idx = (self.m_idx + step) % len(maps.MAPS)
             self.apply_map(maps.MAPS[self.m_idx])
@@ -249,9 +280,17 @@ class Game:
     def browse_confirm(self):
         """Garage: buy or select the shown vehicle. Map screen: choose the map and start driving."""
         if self.state == "maps":
+            if not maps.is_unlocked(self.m_idx, self.save["best"]):
+                prev_name, req = maps.unlock_info(self.m_idx)
+                self.message = (f"Locked! Reach {req} m on {prev_name} first.", 2.5)
+                sound.play("error")
+                return
             self.save["map"] = maps.MAPS[self.m_idx]["id"]
             self.persist()
             self.start_run()
+            return
+        if self.state == "shop":
+            self.shop_upgrade()
             return
         spec = vehicles.VEHICLES[self.g_idx]
         if spec["id"] not in self.save["owned"]:
@@ -284,6 +323,25 @@ class Game:
             self.shake = max(self.shake, r.impact)
             r.impact = 0.0
         self.shake *= math.exp(-S.SHAKE_DECAY * dt)
+
+        # Powerup flash
+        if r.pending_flash:
+            self.flash.trigger(*r.pending_flash)
+            r.pending_flash = None
+
+        # Milestones
+        d = self.distance()
+        for m in MILESTONES:
+            if d >= m and m not in self.milestones_shown:
+                self.milestones_shown.add(m)
+                self.milestone_display = (f"{m} m!", 2.0)
+                self.flash.trigger(S.LIME, 40)
+                break
+        if self.milestone_display:
+            text, timer = self.milestone_display
+            timer -= dt
+            self.milestone_display = (text, timer) if timer > 0 else None
+        self.flash.update(dt)
 
         if 0 < r.fuel <= r.fuel_max * 0.25:                 # beep once a second while the tank is low
             self.low_fuel_timer -= dt
@@ -364,13 +422,22 @@ class Game:
         self.screen.blit(w, off)
 
         if in_game:
+            effects.draw_vignette(self.screen)
             self.hud.draw(self.screen, self.rickshaw, self.distance(), self.time)
+            self.hud.draw_active_powerups(self.screen, self.rickshaw.powerups.active_list, self.time)
+            health_frac = self.rickshaw.health / self.rickshaw.spec["armor"]
+            effects.draw_low_health_warning(self.screen, health_frac, self.time)
+            if self.milestone_display:
+                ui.draw_text(self.screen, self.milestone_display[0], self.fonts.big,
+                             S.LIME, (S.WIDTH // 2, S.HEIGHT // 2 - 80))
+        self.flash.draw(self.screen)
         if self.state in DIM_STATES:
             self.screen.blit(self.dim, (0, 0))
 
         {"menu": self.draw_main_menu, "help": self.draw_help, "options": self.draw_options,
          "paused": self.draw_pause, "gameover": self.draw_gameover,
-         "garage": self.draw_garage, "maps": self.draw_maps}.get(self.state, lambda: None)()
+         "garage": self.draw_garage, "maps": self.draw_maps,
+         "shop": self.draw_shop}.get(self.state, lambda: None)()
 
         if self.show_fps:
             ui.draw_text(self.screen, f"{self.clock.get_fps():.0f} FPS", self.fonts.tiny,
@@ -398,17 +465,21 @@ class Game:
         tips = [(f"Collect coins (Rs {S.COIN_VALUE} each) and CNG cylinders.", S.WHITE),
                 ("Rocks, carts and cars are solid: jump them!", S.WHITE),
                 ("Barrels, cones and barricades can be smashed.", S.WHITE),
+                ("Glowing diamonds are powerups: speed, shield, magnet and more!", S.LIME),
                 ("Wheels only grip the road, so you can't drive in mid-air!", S.LIME)]
         for i, (line, col) in enumerate(tips):
-            ui.draw_text(self.screen, line, self.fonts.small, col, (panel.centerx, panel.top + 292 + i * 30), max_width=580)
+            ui.draw_text(self.screen, line, self.fonts.small, col, (panel.centerx, panel.top + 280 + i * 28), max_width=580)
         self.menus["help"].draw(self.screen, self.fonts)
 
     def draw_options(self):
-        """Options panel with an ON/OFF toggle."""
-        panel = pygame.Rect(0, 0, 500, 300)
-        panel.midtop = (S.WIDTH // 2, 100)
+        """Options panel with volume and display toggles."""
+        panel = pygame.Rect(0, 0, 500, 400)
+        panel.midtop = (S.WIDTH // 2, 70)
         ui.draw_panel(self.screen, self.fonts, panel, "OPTIONS")
-        self.menus["options"].set_labels([f"SHOW FPS: {'ON' if self.show_fps else 'OFF'}", "BACK"])
+        sfx_name = VOLUME_NAMES[min(range(len(VOLUME_STEPS)), key=lambda i: abs(VOLUME_STEPS[i] - S.SFX_VOLUME))]
+        mus_name = VOLUME_NAMES[min(range(len(VOLUME_STEPS)), key=lambda i: abs(VOLUME_STEPS[i] - S.MUSIC_VOLUME))]
+        self.menus["options"].set_labels([f"SFX VOLUME: {sfx_name}", f"MUSIC: {mus_name}",
+                                          f"SHOW FPS: {'ON' if self.show_fps else 'OFF'}", "BACK"])
         self.menus["options"].draw(self.screen, self.fonts)
 
     def draw_pause(self):
@@ -484,29 +555,146 @@ class Game:
         self.menus["garage"].draw(self.screen, self.fonts)
 
     def draw_maps(self):
-        """Map screen: skyline preview, road description, difficulty and best distance."""
+        """Map screen: skyline preview, road description, difficulty, best distance, and lock status."""
         m = maps.MAPS[self.m_idx]
+        locked = not maps.is_unlocked(self.m_idx, self.save["best"])
         panel = pygame.Rect(40, 25, 920, 550)
         ui.draw_panel(self.screen, self.fonts, panel, "CHOOSE YOUR ROAD")
         box = pygame.Rect(75, 125, 430, 258)
         self.screen.blit(self.map_thumb[m["id"]], box)
-        pygame.draw.rect(self.screen, S.MARIGOLD, box, 4, border_radius=6)
+        if locked:
+            dim = pygame.Surface(box.size, pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 150))
+            self.screen.blit(dim, box)
+            self._draw_lock(box.centerx, box.centery - 20, 50)
+        pygame.draw.rect(self.screen, S.MARIGOLD if not locked else (120, 100, 80), box, 4, border_radius=6)
 
         x = 540
-        ui.draw_text(self.screen, m["name"], self.fonts.mid, S.MARIGOLD, (x, 140), "midleft", max_width=400)
-        ui.draw_text(self.screen, m["tagline"], self.fonts.small, S.LIME, (x, 176), "midleft", max_width=400)
+        name_c = S.MARIGOLD if not locked else (120, 100, 80)
+        ui.draw_text(self.screen, m["name"], self.fonts.mid, name_c, (x, 140), "midleft", max_width=400)
+        ui.draw_text(self.screen, m["tagline"], self.fonts.small, S.LIME if not locked else (100, 100, 100),
+                     (x, 176), "midleft", max_width=400)
         for i, line in enumerate(m["lines"]):
             for j, part in enumerate(ui.wrap_text(self.fonts.small, line, 390)):
-                ui.draw_text(self.screen, part, self.fonts.small, S.WHITE, (x, 214 + (i * 2 + j) * 24), "midleft", shadow=False)
+                ui.draw_text(self.screen, part, self.fonts.small, S.WHITE if not locked else (100, 100, 100),
+                             (x, 214 + (i * 2 + j) * 24), "midleft", shadow=False)
         ui.draw_text(self.screen, "DIFFICULTY", self.fonts.tiny, S.MARIGOLD, (x, 332), "midleft", shadow=False)
         for i in range(3):
             ui.diamond(self.screen, (x + 110 + i * 26, 332), 9, S.RED if i < m["difficulty"] else S.PK_GREEN_DARK)
         best = self.save["best"].get(m["id"], 0)
         ui.draw_text(self.screen, f"BEST: {int(best)} m", self.fonts.small, S.WHITE, (x, 366), "midleft")
-        vname = vehicles.BY_ID[self.save["vehicle"]]["name"]
-        ui.draw_text(self.screen, f"DRIVING: {vname}", self.fonts.small, S.MARIGOLD, (panel.centerx, 440), max_width=800)
-        self.menus["maps"].set_labels(["<", "DRIVE!", ">", "BACK"])
+
+        if locked:
+            prev_name, req = maps.unlock_info(self.m_idx)
+            prev_best = self.save["best"].get(maps.MAPS[self.m_idx - 1]["id"], 0)
+            ui.draw_text(self.screen, f"LOCKED: Reach {req} m on {prev_name}",
+                         self.fonts.small, S.RED, (panel.centerx, 410))
+            bar_w = 300
+            bx = panel.centerx - bar_w // 2
+            pygame.draw.rect(self.screen, S.PK_GREEN_DARK, (bx, 432, bar_w, 14), border_radius=4)
+            fill = min(bar_w, int(bar_w * prev_best / req))
+            if fill > 0:
+                pygame.draw.rect(self.screen, S.LIME, (bx, 432, fill, 14), border_radius=4)
+            pygame.draw.rect(self.screen, S.WHITE, (bx, 432, bar_w, 14), 1, border_radius=4)
+            ui.draw_text(self.screen, f"{int(prev_best)} / {req} m", self.fonts.tiny, S.WHITE,
+                         (panel.centerx, 439), shadow=False)
+        else:
+            vname = vehicles.BY_ID[self.save["vehicle"]]["name"]
+            ui.draw_text(self.screen, f"DRIVING: {vname}", self.fonts.small, S.MARIGOLD,
+                         (panel.centerx, 440), max_width=800)
+
+        text, left = self.message
+        if left > 0:
+            ui.draw_text(self.screen, text, self.fonts.small, S.RED, (panel.centerx, 465), max_width=800)
+        btn_label = "LOCKED" if locked else "DRIVE!"
+        self.menus["maps"].set_labels(["<", btn_label, ">", "BACK"])
         self.menus["maps"].draw(self.screen, self.fonts)
+
+    def _draw_lock(self, cx, cy, sz):
+        """Draw a small padlock icon on self.screen."""
+        target = self.screen
+        body_w, body_h = int(sz * 0.6), int(sz * 0.45)
+        bx = cx - body_w // 2
+        by = cy + int(sz * 0.05)
+        pygame.draw.rect(target, (180, 150, 50), (bx, by, body_w, body_h), border_radius=4)
+        pygame.draw.rect(target, (220, 190, 60), (bx, by, body_w, body_h), 2, border_radius=4)
+        shackle_r = int(sz * 0.22)
+        pygame.draw.arc(target, (220, 190, 60), (cx - shackle_r, by - shackle_r * 2 + 2,
+                    shackle_r * 2, shackle_r * 2), 0, math.pi, max(3, sz // 12))
+        # Keyhole
+        kh = max(2, sz // 10)
+        pygame.draw.circle(target, (80, 60, 20), (cx, by + body_h // 2 - 2), kh + 1)
+        pygame.draw.rect(target, (80, 60, 20), (cx - 1, by + body_h // 2, 3, kh + 2))
+
+    # ---- shop ----
+    def shop_upgrade(self):
+        """Buy the next upgrade level for the currently browsed powerup."""
+        spec = powerups.POWERUPS[self.s_idx]
+        pid = spec["id"]
+        levels = self.save.setdefault("powerup_levels", {})
+        current = levels.get(pid, 0)
+        if current >= 2:
+            self.message = ("Already at max level!", 2.0)
+            sound.play("error")
+            return
+        cost = powerups.UPGRADE_COSTS[current + 1]
+        if self.save["wallet"] < cost:
+            self.message = (f"Need {money(cost - self.save['wallet'])} more!", 2.5)
+            sound.play("error")
+            return
+        self.save["wallet"] -= cost
+        levels[pid] = current + 1
+        self.persist()
+        sound.play("buy")
+        self.message = (f"Upgraded to Level {current + 2}!", 2.0)
+
+    def draw_shop(self):
+        """Shop screen: browse and upgrade powerups."""
+        spec = powerups.POWERUPS[self.s_idx]
+        pid = spec["id"]
+        levels = self.save.get("powerup_levels", {})
+        lvl = levels.get(pid, 0)
+        stats = powerups.UPGRADES[pid][lvl]
+
+        panel = pygame.Rect(40, 25, 920, 550)
+        ui.draw_panel(self.screen, self.fonts, panel, "POWER SHOP")
+        ui.draw_text(self.screen, money(self.save["wallet"]), self.fonts.mid,
+                     S.MARIGOLD, (panel.right - 40, panel.top + 45), "midright")
+
+        # Preview box with large powerup icon
+        box = pygame.Rect(75, 115, 430, 300)
+        pygame.draw.rect(self.screen, (30, 50, 45), box, border_radius=14)
+        pygame.draw.rect(self.screen, spec["color"], box, 4, border_radius=14)
+        powerups.draw_icon_large(self.screen, box.centerx, box.centery - 10, pid, self.time)
+
+        # Info on the right
+        x = 540
+        ui.draw_text(self.screen, spec["name"], self.fonts.big, spec["color"], (x, 130), "midleft")
+        for i in range(3):
+            c = S.MARIGOLD if i <= lvl else S.PK_GREEN_DARK
+            ui.diamond(self.screen, (x + i * 26, 175), 9, c)
+        ui.draw_text(self.screen, f"LEVEL {lvl + 1}", self.fonts.small, S.WHITE, (x + 90, 175), "midleft")
+        ui.draw_text(self.screen, stats["desc"], self.fonts.small, S.LIME, (x, 215), "midleft", max_width=400)
+
+        if lvl < 2:
+            nxt = powerups.UPGRADES[pid][lvl + 1]
+            cost = powerups.UPGRADE_COSTS[lvl + 1]
+            ui.draw_text(self.screen, "NEXT LEVEL:", self.fonts.tiny, S.MARIGOLD, (x, 260), "midleft", shadow=False)
+            ui.draw_text(self.screen, nxt["desc"], self.fonts.small, S.WHITE, (x, 286), "midleft", max_width=400)
+            ui.draw_text(self.screen, f"Cost: {money(cost)}", self.fonts.mid, S.MARIGOLD, (x, 320), "midleft")
+        else:
+            ui.draw_text(self.screen, "MAX LEVEL", self.fonts.mid, S.LIME, (x, 260), "midleft")
+
+        text, left = self.message
+        if left > 0:
+            ui.draw_text(self.screen, text, self.fonts.small, S.RED, (panel.centerx, 450), max_width=800)
+
+        if lvl >= 2:
+            label = "MAX LEVEL"
+        else:
+            label = f"UPGRADE {money(powerups.UPGRADE_COSTS[lvl + 1])}"
+        self.menus["shop"].set_labels(["<", label, ">", "BACK"])
+        self.menus["shop"].draw(self.screen, self.fonts)
 
     # ---- sound ----
     def engine_volume(self):

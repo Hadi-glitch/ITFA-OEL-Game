@@ -5,6 +5,7 @@ import pygame
 import settings as S
 import terrain
 import sound
+import powerups
 
 # Damage dealt by each obstacle (absolute health points; vehicles have 80-230 health).
 DAMAGE = {"rock": 28, "cart": 22, "car": 35, "barricade": 16, "barrel": 9, "cone": 3, "garbage": 6}
@@ -123,7 +124,8 @@ class Hazards:
         """One physics step: crash into obstacles, pick up coins/CNG and move flying debris."""
         r.hit_cooldown = max(0.0, r.hit_cooldown - dt)
         front_x = r.x + r.front_ext
-        for cell in range(math.floor((r.x - r.rear_ext - 60) / terrain.CELL), math.floor((r.x + r.front_ext + 60) / terrain.CELL) + 1):
+        margin = r.powerups.stats("magnet")["range"] + 20 if r.powerups.active("magnet") else 60
+        for cell in range(math.floor((r.x - r.rear_ext - margin) / terrain.CELL), math.floor((r.x + r.front_ext + margin) / terrain.CELL) + 1):
             content = terrain.cell_content(cell)
             for i, o in enumerate(content["obs"]):
                 if self.state.get((cell, i, "o")) == "hit":
@@ -135,28 +137,43 @@ class Hazards:
                 if self.state.get((cell, i, "p")):
                     continue
                 py = terrain.get_height(p["x"]) - p["up"]
-                if r.x - r.rear_ext < p["x"] < front_x - 6 and r.y - r.height * 0.8 < py < r.y + 8:
-                    self.state[(cell, i, "p")] = True
-                    if p["kind"] == "coin":
-                        r.coins += 1
-                        colour = S.MARIGOLD
-                        sound.play("coin")
-                    else:
-                        r.fuel = min(r.fuel_max, r.fuel + 35)
-                        colour = S.LIME
-                        sound.play("cng")
-                    for _ in range(6):
-                        fx.emit(p["x"], py, random.uniform(-70, 70), random.uniform(-120, -20), 0.45, 3, 1, colour, 220, 300)
+                in_range = (r.x - r.rear_ext < p["x"] < front_x - 6
+                            and r.y - r.height * 0.8 < py < r.y + 8)
+                if not in_range and p["kind"] == "coin" and r.powerups.active("magnet"):
+                    in_range = abs(p["x"] - r.x) < r.powerups.stats("magnet")["range"]
+                if not in_range:
+                    continue
+                self.state[(cell, i, "p")] = True
+                if p["kind"] == "coin":
+                    r.coins += r.powerups.stats("double_coins")["mult"] if r.powerups.active("double_coins") else 1
+                    colour = S.MARIGOLD
+                    sound.play("coin")
+                elif p["kind"] == "cng":
+                    r.fuel = min(r.fuel_max, r.fuel + 35)
+                    colour = S.LIME
+                    sound.play("cng")
+                elif p["kind"] == "powerup":
+                    r.activate_powerup(p["powerup_id"])
+                    colour = powerups.BY_ID[p["powerup_id"]]["color"]
+                    sound.play("buy")
+                else:
+                    continue
+                burst = 12 if p["kind"] == "powerup" else 6
+                for _ in range(burst):
+                    fx.emit(p["x"], py, random.uniform(-70, 70), random.uniform(-120, -20),
+                            0.45, 3, 1, colour, 220, 300)
         self.update_debris(dt)
 
     def crash(self, r, o, key, ground, fx):
         """Apply the effect of hitting obstacle `o`: damage, speed loss, push-back or knock-over, and effects."""
         kind = o["kind"]
         speed_in = abs(r.speed)
+        shielded = r.powerups.active("shield")
         if kind in SOLID:
             if r.hit_cooldown <= 0 and speed_in > 40:                # gentle nudges do no damage
                 sound.play("hit_solid", min(1.0, 0.4 + speed_in / 300))
-                r.health -= max(3.0, DAMAGE[kind] * min(1.0, speed_in / 250))
+                if not shielded:
+                    r.health -= max(3.0, DAMAGE[kind] * min(1.0, speed_in / 250))
                 r.hit_cooldown = 0.4
                 r.impact = max(r.impact, min(speed_in / 50, 8.0))
                 for _ in range(8):
@@ -165,7 +182,8 @@ class Hazards:
             r.speed = -min(speed_in * 0.25, 60.0)                    # small bounce back
             return
         self.state[key] = "hit"
-        r.health -= DAMAGE[kind]
+        if not shielded:
+            r.health -= DAMAGE[kind]
         r.speed *= SPEED_KEEP[kind]
         r.impact = max(r.impact, min(speed_in / 60, 6.0))
         r.hit_cooldown = 0.2
@@ -234,9 +252,11 @@ class Hazards:
                     pygame.draw.ellipse(surf, (150, 95, 0), (sx - wdt / 2, sy - 9, wdt, 18), 2)
                     if wdt > 8:
                         pygame.draw.ellipse(surf, (255, 225, 120), (sx - wdt / 4, sy - 5, wdt / 2, 10), 1)
-                else:
+                elif p["kind"] == "cng":
                     bob = math.sin(t * 3 + p["x"]) * 3
                     surf.blit(self.cng, self.cng.get_rect(center=(sx, sy + bob)))
+                elif p["kind"] == "powerup":
+                    powerups.draw_pickup(surf, sx, sy, p["powerup_id"], t)
         for d in self.debris:
             rot = pygame.transform.rotate(d["sprite"], -math.degrees(d["ang"]))
             surf.blit(rot, rot.get_rect(center=(d["x"] - cam, d["y"])))

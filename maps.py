@@ -11,7 +11,7 @@ MAPS = [
     dict(id="university", name="UNIVERSITY ROAD", seed=11,
          tagline="Red Line construction zone",
          lines=["Dug-up lanes, dust and metro pillars.", "Barrels, barricades, rubble and deep potholes."],
-         difficulty=2, density=0.62, rough=2.5,
+         difficulty=2, density=0.62, rough=2.5, unlock_req=0,
          terrain=[(38, 150), (24, 55)],
          hazards=[("pothole", 3), ("rock", 3), ("barrel", 3), ("barricade", 2), ("bump", 2), ("cone", 2)],
          scenery=["pillar", "crane", "pole", "tree", "billboard", "stall", "none"],
@@ -21,7 +21,7 @@ MAPS = [
     dict(id="lyari", name="LYARI KI GALIYAN", seed=23,
          tagline="Narrow lanes, broken roads",
          lines=["Rough cobbles, sewage puddles, handcarts.", "Rubbish heaps and endless bumps."],
-         difficulty=3, density=0.72, rough=5.0,
+         difficulty=3, density=0.72, rough=5.0, unlock_req=500,
          terrain=[(24, 120), (14, 46), (6, 17)],
          hazards=[("pothole", 4), ("garbage", 3), ("cart", 2), ("rock", 2), ("bump", 3), ("cone", 1)],
          scenery=["laundry", "pole", "stall", "tree", "laundry", "none"],
@@ -31,7 +31,7 @@ MAPS = [
     dict(id="faisal", name="SHAHRAH-E-FAISAL", seed=37,
          tagline="Rush-hour on the main artery",
          lines=["Smoother asphalt but heavy traffic.", "Broken-down cars, speed breakers, cones."],
-         difficulty=2, density=0.58, rough=1.2,
+         difficulty=2, density=0.58, rough=1.2, unlock_req=800,
          terrain=[(48, 260), (14, 70)],
          hazards=[("car", 4), ("bump", 3), ("cone", 3), ("barricade", 2), ("pothole", 2), ("rock", 1)],
          scenery=["billboard", "bridge", "pole", "tree", "billboard", "none"],
@@ -42,12 +42,28 @@ MAPS = [
 BY_ID = {m["id"]: m for m in MAPS}
 
 
+def is_unlocked(idx, best_dict):
+    """True if the map at index `idx` is playable. Map 0 always is; later maps
+    need the player to reach unlock_req metres on the PREVIOUS map."""
+    m = MAPS[idx]
+    if m["unlock_req"] == 0:
+        return True
+    prev = MAPS[idx - 1]
+    return best_dict.get(prev["id"], 0) >= m["unlock_req"]
+
+
+def unlock_info(idx):
+    """Return (prev_map_name, required_distance) for a locked map."""
+    m = MAPS[idx]
+    prev = MAPS[idx - 1]
+    return prev["name"], m["unlock_req"]
+
+
 def build_background(m):
     art = assets.load_image("backgrounds", f"{m['id']}.png", alpha=False, height=S.HEIGHT)
     if art is not None and art.get_width() >= S.WIDTH:
         return art                      # painted skyline: already loops, no mirroring needed
-    w = S.WIDTH * 2                     # ...existing procedural code continues unchanged
-    """Draw a seamless-looking skyline picture (2 screens wide) for a map; it is tiled with parallax."""
+    # Draw a seamless-looking skyline picture (2 screens wide); it is tiled with parallax.
     w = S.WIDTH * 2
     surf = pygame.Surface((w, S.HEIGHT))
     top, bottom = m["sky"]

@@ -91,3 +91,74 @@ def engine(volume):
     if not _engine.get_busy():
         _engine.play(snd, loops=-1)
     _engine.set_volume(min(1.0, volume * S.SFX_VOLUME))
+
+
+# --------------------------------------------------------------------------
+# Background music
+# --------------------------------------------------------------------------
+_music_tracks = []
+_music_idx = -1
+
+
+def discover_music():
+    """Find all .ogg, .mp3 and .wav files in assets/sounds/music/."""
+    global _music_tracks
+    music_dir = os.path.join(SOUND_DIR, "music")
+    _music_tracks = []
+    if not os.path.isdir(music_dir):
+        os.makedirs(music_dir, exist_ok=True)
+        if S.ASSET_DEBUG:
+            print(f"[sound] created {music_dir} -- drop .ogg/.mp3 files here for background music")
+        return
+    for f in sorted(os.listdir(music_dir)):
+        if f.lower().endswith((".ogg", ".mp3", ".wav")):
+            _music_tracks.append(os.path.join(music_dir, f))
+    if S.ASSET_DEBUG:
+        print(f"[sound] found {len(_music_tracks)} music track(s)")
+
+
+def play_music(idx=0):
+    """Start playing a music track by index. Loops forever."""
+    global _music_idx
+    if not _ok or not _music_tracks or not S.SOUND_ON:
+        return
+    _music_idx = idx % len(_music_tracks)
+    try:
+        pygame.mixer.music.load(_music_tracks[_music_idx])
+        pygame.mixer.music.set_volume(S.MUSIC_VOLUME)
+        pygame.mixer.music.play(-1)
+    except pygame.error as e:
+        if S.ASSET_DEBUG:
+            print(f"[sound] music error: {e}")
+
+
+def stop_music():
+    """Stop the current music."""
+    if not _ok:
+        return
+    try:
+        pygame.mixer.music.stop()
+    except pygame.error:
+        pass
+
+
+def set_music_volume(vol):
+    """Change the music volume (0..1). Pass 0 to mute."""
+    if not _ok:
+        return
+    try:
+        pygame.mixer.music.set_volume(max(0.0, min(1.0, vol)))
+    except pygame.error:
+        pass
+
+
+def music_track_name():
+    """Return the filename (without extension) of the current track, or a placeholder."""
+    if not _music_tracks or _music_idx < 0:
+        return "No tracks"
+    return os.path.splitext(os.path.basename(_music_tracks[_music_idx]))[0]
+
+
+def has_music():
+    """True if at least one music file was found."""
+    return len(_music_tracks) > 0

@@ -235,12 +235,93 @@ class Scenery:
 # --------------------------------------------------------------------------
 # Speed feeling
 # --------------------------------------------------------------------------
+_speed_layer = None
+
+
 def draw_speed_lines(surf, speed_frac):
-    """Draw random horizontal streaks when going fast; more streaks the faster you go."""
+    """Draw semi-transparent horizontal streaks when going fast; more streaks the faster you go."""
+    global _speed_layer
     if speed_frac < 0.6:
         return
+    if _speed_layer is None or _speed_layer.get_size() != surf.get_size():
+        _speed_layer = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+    _speed_layer.fill((0, 0, 0, 0))
     count = int((speed_frac - 0.6) * 30)
+    alpha = min(160, int((speed_frac - 0.6) * 350))
     for _ in range(count):
         y = random.randint(60, S.HEIGHT - 140)
         x = random.randint(0, S.WIDTH)
-        pygame.draw.line(surf, (255, 255, 255), (x, y), (x - random.randint(30, 80), y), 1)
+        pygame.draw.line(_speed_layer, (255, 255, 255, alpha), (x, y),
+                         (x - random.randint(30, 80), y), 1)
+    surf.blit(_speed_layer, (0, 0))
+
+
+# --------------------------------------------------------------------------
+# Screen flash (brief colour burst on powerup pickup or milestone)
+# --------------------------------------------------------------------------
+class ScreenFlash:
+    """Brief full-screen colour flash that fades out quickly."""
+
+    def __init__(self):
+        self.surface = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+        self.alpha = 0.0
+        self.color = (255, 255, 255)
+
+    def trigger(self, color=(255, 255, 255), strength=80):
+        """Start a flash with the given colour and initial alpha."""
+        self.color = color
+        self.alpha = strength
+
+    def update(self, dt):
+        """Fade the flash toward zero."""
+        if self.alpha > 0:
+            self.alpha = max(0.0, self.alpha - 300 * dt)
+
+    def draw(self, surf):
+        """Blit the flash if it is still visible."""
+        if self.alpha > 1:
+            self.surface.fill((*self.color, int(self.alpha)))
+            surf.blit(self.surface, (0, 0))
+
+
+# --------------------------------------------------------------------------
+# Vignette (subtle dark edges around the screen)
+# --------------------------------------------------------------------------
+_vignette = None
+
+
+def draw_vignette(surf):
+    """Draw a pre-rendered dark vignette around the screen edges."""
+    global _vignette
+    if _vignette is None:
+        _vignette = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+        for i in range(50):
+            alpha = int(35 * (1 - i / 50) ** 2)
+            rect = pygame.Rect(i, i, S.WIDTH - 2 * i, S.HEIGHT - 2 * i)
+            pygame.draw.rect(_vignette, (0, 0, 0, alpha), rect, 1)
+    surf.blit(_vignette, (0, 0))
+
+
+# --------------------------------------------------------------------------
+# Low-health warning (red pulse at screen edges)
+# --------------------------------------------------------------------------
+_health_warn = None
+
+
+def draw_low_health_warning(surf, health_frac, t):
+    """Pulse red at screen edges when health is below 25%."""
+    global _health_warn
+    if health_frac > 0.25:
+        return
+    if _health_warn is None:
+        _health_warn = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+    pulse = 0.5 + 0.5 * math.sin(t * 6)
+    alpha = int(55 * pulse * (1 - health_frac / 0.25))
+    _health_warn.fill((0, 0, 0, 0))
+    bw = 28
+    pygame.draw.rect(_health_warn, (200, 20, 20, alpha), (0, 0, S.WIDTH, bw))
+    pygame.draw.rect(_health_warn, (200, 20, 20, alpha), (0, S.HEIGHT - bw, S.WIDTH, bw))
+    pygame.draw.rect(_health_warn, (200, 20, 20, alpha), (0, 0, bw, S.HEIGHT))
+    pygame.draw.rect(_health_warn, (200, 20, 20, alpha), (S.WIDTH - bw, 0, bw, S.HEIGHT))
+    surf.blit(_health_warn, (0, 0))
+

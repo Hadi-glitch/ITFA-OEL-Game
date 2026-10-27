@@ -4,6 +4,7 @@ import random
 from functools import lru_cache
 import settings as S
 import maps
+import powerups
 
 CELL = 420                 # the road is generated in 420 px chunks, each seeded so a map is always the same
 _cur = maps.MAPS[0]        # the map currently being played
@@ -47,7 +48,8 @@ def _cell(map_id, cell):
     x0 = cell * CELL
     terr, obs, pick = [], [], []
     safe = cell < 2                                   # keep the start line clear
-    density = min(0.92, m["density"] + 0.006 * max(0, cell - 2))   # busier the further you drive
+    progress = min(1.5, max(0, cell - 3) / 30.0)      # 0 near start, ~1 at 1200 m; drives difficulty
+    density = min(0.95, m["density"] + 0.012 * max(0, cell - 2))   # busier the further you drive
 
     def add(kind, cx):
         """Create one hazard of `kind` centred at world x `cx`."""
@@ -62,7 +64,14 @@ def _cell(map_id, cell):
             obs.append(dict(kind=kind, x0=cx - size[0] / 2, w=size[0], h=size[1], variant=rng.randint(0, 3)))
 
     if not safe and rng.random() < density:
-        kind = _pick(rng, m["hazards"])
+        # Shift hazard weights toward harder obstacles with distance
+        adjusted = []
+        for _name, _weight in m["hazards"]:
+            w = _weight
+            if _name in ("rock", "car", "cart"):   w *= (1.0 + progress * 1.2)
+            elif _name in ("cone",):               w *= max(0.3, 1.0 - progress * 0.5)
+            adjusted.append((_name, w))
+        kind = _pick(rng, adjusted)
         cx, best = None, 1e9
         for _ in range(16):                          # prefer a flat stretch that is not at the top of a steep climb
             cand = x0 + rng.uniform(110, CELL - 110)  # kept away from cell edges so neighbours are >= 200 px apart
@@ -80,6 +89,12 @@ def _cell(map_id, cell):
             cx2 = cx + rng.choice((-1, 1)) * rng.uniform(120, 150)
             if x0 + 40 < cx2 < x0 + CELL - 40:
                 add(kind, cx2)
+        elif progress > 0.4 and rng.random() < min(0.3, progress * 0.2):  # bonus obstacle at distance
+            kind2 = _pick(rng, adjusted)
+            if kind2 not in ("pothole", "bump"):
+                cx2 = cx + rng.choice((-1, 1)) * rng.uniform(140, 200)
+                if x0 + 40 < cx2 < x0 + CELL - 40:
+                    add(kind2, cx2)
 
     solid = [o for o in obs if o["kind"] in ("rock", "cart", "car", "barricade", "garbage")]
     if rng.random() < 0.6:                                                     # coins
@@ -93,8 +108,12 @@ def _cell(map_id, cell):
             sx = x0 + rng.uniform(30, 120)
             for i in range(5):
                 pick.append(dict(kind="coin", x=sx + i * 36, up=38))
-    if not safe and rng.random() < 0.09:                                       # CNG cylinder
+    cng_chance = max(0.04, 0.09 - progress * 0.03)                             # CNG gets rarer
+    if not safe and rng.random() < cng_chance:
         pick.append(dict(kind="cng", x=x0 + rng.uniform(60, CELL - 60), up=36))
+    if not safe and rng.random() < S.POWERUP_SPAWN_CHANCE:                     # powerup
+        pick.append(dict(kind="powerup", powerup_id=powerups.pick_random(rng),
+                         x=x0 + rng.uniform(80, CELL - 80), up=44))
     return dict(terr=terr, obs=obs, pick=pick)
 
 

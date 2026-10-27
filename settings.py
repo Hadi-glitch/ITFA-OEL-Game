@@ -55,3 +55,9 @@ ASSET_DEBUG = True      # print a line for every PNG that loads or is missing (s
 SOUND_ON = True        # master switch for effects and music
 SFX_VOLUME = 0.7       # 0..1
 MUSIC_VOLUME = 0.4     # 0..1 (quieter than effects so they stay clear)
+
+# ---- Powerups ----
+POWERUP_SPAWN_CHANCE = 0.06    # chance per terrain cell to contain a powerup
+SPEED_BOOST_MULT = 1.4         # max speed multiplier during speed boost
+HEALTH_REGEN_TOTAL = 30.0      # total HP restored over the regen duration
+MAGNET_RANGE = 200             # pixels: auto-collect coins within this radius

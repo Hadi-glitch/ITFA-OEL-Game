@@ -283,6 +283,28 @@ class HUD:
         if low and int(t * 2) % 2 == 0:
             draw_text(surf, "LOW CNG!", self.f.mid, S.RED, (S.WIDTH // 2, 50))
 
+    def draw_active_powerups(self, surf, active_list, t):
+        """Draw small indicator boxes at the top centre showing active powerup effects."""
+        if not active_list:
+            return
+        total_w = len(active_list) * 74 + (len(active_list) - 1) * 6
+        start_x = S.WIDTH // 2 - total_w // 2
+        for idx, (spec, frac) in enumerate(active_list):
+            x = start_x + idx * 80
+            y = 12
+            box = pygame.Rect(x, y, 70, 42)
+            pygame.draw.rect(surf, S.PK_GREEN_DARK, box, border_radius=6)
+            pygame.draw.rect(surf, spec["color"], box, 2, border_radius=6)
+            draw_text(surf, spec["name"], self.f.tiny, spec["color"],
+                      (box.centerx, box.top + 14), shadow=False)
+            bar = pygame.Rect(box.left + 4, box.bottom - 10, box.width - 8, 5)
+            pygame.draw.rect(surf, (30, 30, 30), bar, border_radius=2)
+            fill_w = int(bar.width * frac)
+            if fill_w > 0:
+                pygame.draw.rect(surf, spec["color"],
+                                 (bar.left, bar.top, fill_w, bar.height), border_radius=2)
+
+
 def wrap_text(font, text, width):
     """Split `text` into lines that each fit inside `width` pixels."""
     lines, line = [], ""

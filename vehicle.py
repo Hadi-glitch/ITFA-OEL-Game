@@ -5,6 +5,7 @@ import pygame
 import settings as S
 import terrain
 import sound
+import powerups
 
 DUST = (175, 150, 115)
 
@@ -44,6 +45,7 @@ class Rickshaw:
         self.height = art.height
         self.fuel_max = self.spec["fuel"]
         self.mass = self.spec["mass"]
+        self.powerups = powerups.ActivePowerups()
         self.reset()
 
     def reset(self):
@@ -56,6 +58,8 @@ class Rickshaw:
         self.fuel = self.fuel_max
         self.health = self.spec["armor"]
         self.coins = 0
+        self.powerups.clear()
+        self.pending_flash = None
         self.accel = 0.0                  # m/s^2
         self.slope_deg = 0.0
         self.throttle = False
@@ -98,6 +102,11 @@ class Rickshaw:
             if self.speed < 140:          # a small forward hop so you can leap a rock from a standstill
                 self.speed = 140.0
 
+    def activate_powerup(self, powerup_id):
+        """Start a powerup effect. Called when the player collects a powerup pickup."""
+        self.powerups.activate(powerup_id)
+        self.pending_flash = (powerups.BY_ID[powerup_id]["color"], 60)
+
     # ---------------- physics ----------------
     def update(self, dt, keys, fx):
         """One fixed physics step: forces -> speed -> position, then animation and particles."""
@@ -123,7 +132,10 @@ class Rickshaw:
         force -= S.DRAG * v
         self.accel = force / self.mass
         v += self.accel * dt
-        self.speed = max(-S.MAX_REVERSE, min(sp["max_speed"], v * S.PIXELS_PER_METER))
+        max_spd = sp["max_speed"]
+        if self.powerups.active("speed_boost"):
+            max_spd *= self.powerups.stats("speed_boost")["mult"]
+        self.speed = max(-S.MAX_REVERSE, min(max_spd, v * S.PIXELS_PER_METER))
         self.x += self.speed * dt
         self.slope_deg = math.degrees(terrain.get_angle(self.x))
 
@@ -141,6 +153,12 @@ class Rickshaw:
 
         if landed_vy > 0:
             self.on_land(landed_vy, fx)
+        # Powerup timers and effects
+        self.powerups.update(dt)
+        if self.powerups.active("health_regen"):
+            s = self.powerups.stats("health_regen")
+            self.health = min(self.spec["armor"], self.health + s["total"] / s["duration"] * dt)
+
         self.update_pose(dt)
         self.animate(dt, fx)
 
