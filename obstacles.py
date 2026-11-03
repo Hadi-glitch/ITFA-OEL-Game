@@ -247,11 +247,20 @@ class Hazards:
                     continue
                 sx, sy = p["x"] - cam, terrain.get_height(p["x"]) - p["up"]
                 if p["kind"] == "coin":
-                    wdt = max(3, int(abs(math.cos(t * 4 + p["x"] * 0.03)) * 16))   # spinning coin: squash its width
+                    cos_val = math.cos(t * 4 + p["x"] * 0.03)
+                    wdt = max(3, int(abs(cos_val) * 16))   # spinning 3D coin
+                    # 3D Coin Glow
+                    glow_w = wdt + 8
+                    glow_surf = pygame.Surface((glow_w, 24), pygame.SRCALPHA)
+                    pygame.draw.ellipse(glow_surf, (255, 215, 60, 35), (0, 0, glow_w, 24))
+                    surf.blit(glow_surf, (sx - glow_w / 2, sy - 12))
+                    # 3D Coin edge thickness
+                    if cos_val > 0:
+                        pygame.draw.ellipse(surf, (160, 100, 10), (sx - wdt / 2 + 1, sy - 9, wdt, 18))
                     pygame.draw.ellipse(surf, S.MARIGOLD, (sx - wdt / 2, sy - 9, wdt, 18))
                     pygame.draw.ellipse(surf, (150, 95, 0), (sx - wdt / 2, sy - 9, wdt, 18), 2)
                     if wdt > 8:
-                        pygame.draw.ellipse(surf, (255, 225, 120), (sx - wdt / 4, sy - 5, wdt / 2, 10), 1)
+                        pygame.draw.ellipse(surf, (255, 235, 140), (sx - wdt / 4, sy - 5, wdt / 2, 10), 1)
                 elif p["kind"] == "cng":
                     bob = math.sin(t * 3 + p["x"]) * 3
                     surf.blit(self.cng, self.cng.get_rect(center=(sx, sy + bob)))

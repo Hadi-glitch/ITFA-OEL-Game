@@ -1,21 +1,10 @@
 {
-  "wallet": 13730,
+  "wallet": 0,
   "owned": [
-    "classic",
-    "deluxe",
-    "chingchi",
-    "loader"
+    "classic"
   ],
-  "vehicle": "loader",
+  "vehicle": "classic",
   "map": "university",
-  "best": {
-    "lyari": 991.7501475818779,
-    "university": 1371.1776824860501,
-    "faisal": 453.68674309433095
-  },
-  "powerup_levels": {
-    "health_regen": 1,
-    "speed_boost": 1,
-    "shield": 1
-  }
+  "best": {},
+  "powerup_levels": {}
 }

@@ -32,3 +32,10 @@ def write(data):
             json.dump(data, f, indent=2)
     except OSError:
         pass
+
+
+def reset():
+    """Reset the save file to brand-new defaults and write it to disk."""
+    data = default()
+    write(data)
+    return data

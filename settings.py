@@ -22,7 +22,7 @@ SHADOW = (10, 22, 14)
 
 # ---- Shared driving physics (each vehicle's own mass/force/speed lives in vehicles.py) ----
 DRAG = 30.0           # N per (m/s) of speed - simple air/rolling resistance
-MAX_REVERSE = 100.0   # px/s
+MAX_REVERSE = 140.0   # px/s
 
 # ---- Jump / vertical physics (pixels and seconds, a gameplay-tuned value) ----
 GRAVITY = 1500.0      # downward acceleration, px/s^2

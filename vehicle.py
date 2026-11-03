@@ -99,8 +99,14 @@ class Rickshaw:
         if self.on_ground:
             self.vy = -S.JUMP_SPEED       # negative y is upward
             self.on_ground = False
-            if self.speed < 140:          # a small forward hop so you can leap a rock from a standstill
-                self.speed = 140.0
+            if self.speed < 0 or (self.speed == 0 and self.braking):
+                # Moving in reverse or backwards order: jump backwards!
+                if self.speed > -140.0:
+                    self.speed = -140.0
+            else:
+                # Forward driving: small forward hop so you can leap a rock from a standstill
+                if self.speed < 140.0:
+                    self.speed = 140.0
 
     def activate_powerup(self, powerup_id):
         """Start a powerup effect. Called when the player collects a powerup pickup."""
@@ -275,7 +281,3 @@ class Rickshaw:
         rotated = pygame.transform.rotate(self.art.body, -math.degrees(a))   # pygame rotates counter-clockwise
         cx, cy = self.to_world(self.art.width / 2, self.art.height / 2)
         screen.blit(rotated, rotated.get_rect(center=(cx + ox, cy)))
-
-        if self.art.head:                                                    # headlight glow
-            gx, gy = self.to_world(*self.art.head)
-            screen.blit(self.glow, self.glow.get_rect(center=(gx + ox, gy)))
