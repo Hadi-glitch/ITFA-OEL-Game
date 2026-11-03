@@ -25,6 +25,7 @@ HELP_LINES = [
     ("D / Right", "Accelerate"),
     ("A / Left", "Brake and reverse"),
     ("Space / W / Up", "Jump"),
+    ("F11 / Alt+Enter", "Toggle fullscreen"),
     ("R", "Restart the run"),
     ("Esc", "Pause"),
 ]
@@ -48,14 +49,16 @@ class Game:
         """Create the window, load art and the save file, build menus and set every counter to its start value."""
         pygame.init()
         sound.init()
-        self.screen = pygame.display.set_mode((S.WIDTH, S.HEIGHT))
+        self.save = save.load()
+        self.fullscreen = bool(self.save.get("fullscreen", False))
+        flags = pygame.SCALED | (pygame.FULLSCREEN if self.fullscreen else 0)
+        self.screen = pygame.display.set_mode((S.WIDTH, S.HEIGHT), flags)
         pygame.display.set_caption(S.TITLE)
         self.clock = pygame.time.Clock()
         self.fonts = ui.Fonts()
         self.hud = ui.HUD(self.fonts)
         self.title_icon = ui.make_crescent_star(96)
         self.world = pygame.Surface((S.WIDTH, S.HEIGHT))    # the world is drawn here, then shaken onto the screen
-        self.save = save.reset()   # resets game data on startup when run again
         self.arts = {v["id"]: vehicles.VehicleArt(v) for v in vehicles.VEHICLES}                 # in-game sprites
         self.preview_arts = {v["id"]: vehicles.VehicleArt(v, 1.35) for v in vehicles.VEHICLES}   # bigger, for the garage
         self.map_bg = {m["id"]: maps.build_background(m) for m in maps.MAPS}
@@ -81,10 +84,11 @@ class Game:
             "menu": ui.Menu([("START", "start"), ("GARAGE", "garage"), ("SHOP", "shop"),
                              ("HOW TO PLAY", "help"), ("OPTIONS", "options"),
                              ("EXIT", "exit")], cx, 210, height=44, gap=7),
-            "help": ui.Menu([("BACK", "menu")], cx, 490),
+            "help": ui.Menu([("BACK", "menu")], cx, 478, height=44),
             "options": ui.Menu([("RESET GAME DATA", "reset_save"),
-                                ("", "toggle_sfx"), ("", "toggle_music"), ("", "toggle_fps"),
-                                ("BACK", "menu")], cx, 140, width=380, gap=8),
+                                ("", "toggle_sfx"), ("", "toggle_music"),
+                                ("", "toggle_fullscreen"), ("", "toggle_fps"),
+                                ("BACK", "menu")], cx, 120, width=380, height=44, gap=8),
             "paused": ui.Menu([("RESUME", "resume"), ("RESTART", "restart"),
                                ("MAIN MENU", "menu")], cx, 210),
             "gameover": ui.Menu([("RETRY", "restart"), ("MAIN MENU", "menu")], cx, 350),
@@ -129,6 +133,18 @@ class Game:
         """Write the save file."""
         save.write(self.save)
 
+    def toggle_fullscreen(self):
+        """Toggle between windowed and fullscreen mode while preserving aspect ratio."""
+        try:
+            pygame.display.toggle_fullscreen()
+            self.fullscreen = bool(self.screen.get_flags() & pygame.FULLSCREEN)
+        except Exception:
+            self.fullscreen = not self.fullscreen
+            flags = pygame.SCALED | (pygame.FULLSCREEN if self.fullscreen else 0)
+            self.screen = pygame.display.set_mode((S.WIDTH, S.HEIGHT), flags)
+        self.save["fullscreen"] = self.fullscreen
+        self.persist()
+
     def selected_map(self):
         """The map dict chosen for the next run."""
         return maps.BY_ID.get(self.save["map"], maps.MAPS[0])
@@ -155,6 +171,7 @@ class Game:
             self.message = ("", 0.0)
         if state in ("menu", "help", "options", "garage", "shop"):
             self.apply_map(self.selected_map())
+            sound.set_music_volume(S.MUSIC_VOLUME)
 
     def start_run(self):
         """Create/reset the vehicle for the selected map and begin playing."""
@@ -173,6 +190,7 @@ class Game:
         self.milestones_shown = set()
         self.milestone_display = None
         self.rickshaw.powerups.set_levels(self.save.get("powerup_levels", {}))
+        sound.set_music_volume(S.MUSIC_VOLUME * 0.35)
         self.state = "playing"
 
     def end_run(self, reason):
@@ -194,6 +212,12 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.KEYDOWN and (
+                event.key == pygame.K_F11
+                or (event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and (event.mod & pygame.KMOD_ALT))
+            ):
+                sound.play("click")
+                self.toggle_fullscreen()
             elif self.state == "playing":
                 self.handle_play_event(event)
             elif self.state in ("garage", "maps", "shop"):
@@ -248,6 +272,7 @@ class Game:
         if action == "restart":
             self.start_run()
         elif action == "resume":
+            sound.set_music_volume(S.MUSIC_VOLUME * 0.35)
             self.state = "playing"
         elif action == "start":
             self.set_state("maps")
@@ -259,12 +284,16 @@ class Game:
             self.browse_confirm()
         elif action == "reset_save":
             self.save = save.reset()
+            self.save["fullscreen"] = self.fullscreen
+            self.persist()
             self.g_idx = 0
             self.m_idx = 0
             self.s_idx = 0
             self.apply_map(self.selected_map())
             self.message = ("Game data reset successfully!", 2.5)
             sound.play("buy")
+        elif action == "toggle_fullscreen":
+            self.toggle_fullscreen()
         elif action == "toggle_fps":
             self.show_fps = not self.show_fps
         elif action == "toggle_sfx":
@@ -478,37 +507,37 @@ class Game:
         pygame.draw.circle(self.screen, (255, 230, 110), (cx_coin - 2, cy_coin - 2), 4)
         ui.draw_text(self.screen, wallet_str, self.fonts.mid, S.MARIGOLD, (wallet_rect.right - 14, wallet_rect.centery), "midright")
         self.menus["menu"].draw(self.screen, self.fonts)
-        ui.draw_text(self.screen, "ITFA Project  |  Python + Pygame", self.fonts.tiny,
-                     S.WHITE, (S.WIDTH // 2, S.HEIGHT - 18))
 
     def draw_help(self):
         """How-to-play panel listing the controls and the new road hazards."""
-        panel = pygame.Rect(0, 0, 640, 500)
-        panel.midtop = (S.WIDTH // 2, 40)
+        panel = pygame.Rect(0, 0, 640, 510)
+        panel.midtop = (S.WIDTH // 2, 35)
         ui.draw_panel(self.screen, self.fonts, panel, "HOW TO PLAY")
-        y = panel.top + 105
+        y = panel.top + 95
         for key, what in HELP_LINES:
             ui.draw_text(self.screen, key, self.fonts.small, S.MARIGOLD, (panel.left + 70, y), "midleft")
             ui.draw_text(self.screen, what, self.fonts.small, S.WHITE, (panel.left + 290, y), "midleft")
-            y += 34
+            y += 28
         tips = [(f"Collect coins (Rs {S.COIN_VALUE} each) and CNG cylinders.", S.WHITE),
                 ("Rocks, carts and cars are solid: jump them!", S.WHITE),
                 ("Barrels, cones and barricades can be smashed.", S.WHITE),
                 ("Glowing diamonds are powerups: speed, shield, magnet and more!", S.LIME),
                 ("Wheels only grip the road, so you can't drive in mid-air!", S.LIME)]
         for i, (line, col) in enumerate(tips):
-            ui.draw_text(self.screen, line, self.fonts.small, col, (panel.centerx, panel.top + 280 + i * 28), max_width=580)
+            ui.draw_text(self.screen, line, self.fonts.small, col, (panel.centerx, panel.top + 285 + i * 26), max_width=580)
         self.menus["help"].draw(self.screen, self.fonts)
 
     def draw_options(self):
         """Options panel with volume, display and reset toggles."""
-        panel = pygame.Rect(0, 0, 520, 440)
-        panel.midtop = (S.WIDTH // 2, 50)
+        panel = pygame.Rect(0, 0, 520, 460)
+        panel.midtop = (S.WIDTH // 2, 45)
         ui.draw_panel(self.screen, self.fonts, panel, "OPTIONS")
         sfx_name = VOLUME_NAMES[min(range(len(VOLUME_STEPS)), key=lambda i: abs(VOLUME_STEPS[i] - S.SFX_VOLUME))]
         mus_name = VOLUME_NAMES[min(range(len(VOLUME_STEPS)), key=lambda i: abs(VOLUME_STEPS[i] - S.MUSIC_VOLUME))]
+        fs_label = f"FULLSCREEN: {'ON' if self.fullscreen else 'OFF'}"
         self.menus["options"].set_labels(["RESET GAME DATA",
                                           f"SFX VOLUME: {sfx_name}", f"MUSIC: {mus_name}",
+                                          fs_label,
                                           f"SHOW FPS: {'ON' if self.show_fps else 'OFF'}", "BACK"])
         self.menus["options"].draw(self.screen, self.fonts)
         text, left = self.message

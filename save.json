@@ -1,10 +1,13 @@
 {
-  "wallet": 0,
+  "wallet": 775,
   "owned": [
     "classic"
   ],
   "vehicle": "classic",
   "map": "university",
-  "best": {},
-  "powerup_levels": {}
+  "best": {
+    "university": 742.9427943236445
+  },
+  "powerup_levels": {},
+  "fullscreen": false
 }

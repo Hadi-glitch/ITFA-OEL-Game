@@ -3,6 +3,7 @@
 import math
 import pygame
 import settings as S
+import sound
 
 
 class Fonts:
@@ -293,7 +294,9 @@ class Menu:
         if event.type == pygame.MOUSEMOTION:
             for i, b in enumerate(self.buttons):
                 if b.rect.collidepoint(event.pos):
-                    self.selected = i
+                    if self.selected != i:
+                        self.selected = i
+                        sound.play("click", 0.35)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for i, b in enumerate(self.buttons):
                 if b.rect.collidepoint(event.pos):
@@ -304,8 +307,10 @@ class Menu:
             next_keys = (pygame.K_RIGHT, pygame.K_d) if self.horizontal else (pygame.K_DOWN, pygame.K_s)
             if event.key in prev_keys:
                 self.selected = (self.selected - 1) % n
+                sound.play("click", 0.35)
             elif event.key in next_keys:
                 self.selected = (self.selected + 1) % n
+                sound.play("click", 0.35)
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 return self.buttons[self.selected].action
         return None

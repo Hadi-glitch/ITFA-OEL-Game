@@ -9,7 +9,7 @@ PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), S.SAVE_FILE)
 def default():
     """A brand-new save: starter vehicle only, first map."""
     return {"wallet": S.START_WALLET, "owned": ["classic"], "vehicle": "classic",
-            "map": "university", "best": {}, "powerup_levels": {}}
+            "map": "university", "best": {}, "powerup_levels": {}, "fullscreen": False}
 
 
 def load():

@@ -54,7 +54,7 @@ ASSET_DEBUG = True      # print a line for every PNG that loads or is missing (s
 # ---- Sound ----
 SOUND_ON = True        # master switch for effects and music
 SFX_VOLUME = 0.7       # 0..1
-MUSIC_VOLUME = 0.4     # 0..1 (quieter than effects so they stay clear)
+MUSIC_VOLUME = 0.15     # 0..1 (quieter than effects so they stay clear)
 
 # ---- Powerups ----
 POWERUP_SPAWN_CHANCE = 0.06    # chance per terrain cell to contain a powerup
