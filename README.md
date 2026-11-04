@@ -17,7 +17,6 @@ Powerups (collectible glowing diamonds on the road):
 Music: drop .ogg / .mp3 / .wav files into assets/sounds/music/ for background tracks.
        Volume is controlled in the Options menu (SFX and Music separately).
 
-Save file: save.json (delete it to reset money and vehicles).
-For testing set START_WALLET in settings.py and delete save.json.
+Save file: Game resets after every exit. So do your best at once.
 
 ITFA Project | Python + Pygame
